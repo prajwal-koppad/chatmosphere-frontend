@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import chatIcon from "../assets/chat-icon.png";
 import { toast } from "react-hot-toast";
 import { createRoom as createRoomApi, joinRoom } from "../services/RoomService";
@@ -29,6 +29,10 @@ const JoinCreateChat = () => {
     });
   }
 
+  useEffect(() => {
+    if (connected) navigate("/chat");
+  }, [connected]);
+
   async function joinChat() {
     if (!validateForm()) return;
     try {
@@ -54,7 +58,7 @@ const JoinCreateChat = () => {
     try {
       const response = await createRoomApi(userDetail);
       toast.success("Room create successfully !!!");
-
+      console.log(response)
       setCurrentUser(userDetail.userName);
       setRoomId(response?.roomId);
       setConnected(true);

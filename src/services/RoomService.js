@@ -5,7 +5,7 @@ export const createRoom = async (roomDetails) => {
     createRoomUrl,
     roomDetails
   );
-  const data = response.data;
+  return response.data;
 };
 
 export const joinRoom = async (roomId) => {

@@ -40,10 +40,8 @@ const ChatPage = () => {
   } = useChatContext();
 
   useEffect(() => {
-    if (!connected) {
-      navigate("/");
-    }
-  }, [connected, roomId, currentUser]);
+    if (!connected) navigate("/");
+  }, [connected]);
 
   //load messages
 
@@ -186,6 +184,7 @@ const ChatPage = () => {
   const groupedMessages = messages.reduce((acc, msg) => {
     const groupKey = formatMessageDate(msg.sentAt);
     if (!acc[groupKey]) acc[groupKey] = [];
+    msg.sentAt = new Date(msg.sentAt + "Z");
     acc[groupKey].push(msg);
     return acc;
   }, {});
@@ -274,7 +273,7 @@ const ChatPage = () => {
 
                     {/* Timestamp */}
                     <span className="text-[10px] text-gray-300">
-                      {new Date(message.sentAt).toLocaleTimeString([], {
+                      {message.sentAt.toLocaleTimeString([], {
                         hour: "2-digit",
                         minute: "2-digit",
                       })}

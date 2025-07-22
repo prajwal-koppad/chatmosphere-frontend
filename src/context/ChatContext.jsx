@@ -4,12 +4,12 @@ import { getStorageItem, setStorageItem } from "../services/StorageService";
 const ChatContext = createContext();
 
 export const ChatProvider = ({ children }) => {
-  const [roomId, setRoomId] = useState(() => getStorageItem("roomId", ""));
+  const [roomId, setRoomId] = useState(() => getStorageItem("roomId"));
   const [currentUser, setCurrentUser] = useState(() =>
-    getStorageItem("userName", "")
+    getStorageItem("userName")
   );
   const [connected, setConnected] = useState(() =>
-    getStorageItem("connected", false)
+    getStorageItem("connected") === 'true' || false
   );
 
   useEffect(() => {
