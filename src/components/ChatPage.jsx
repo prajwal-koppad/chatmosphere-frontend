@@ -109,7 +109,6 @@ const ChatPage = () => {
         } else {
           toast.error("Failed to load messages !!!");
         }
-        console.error(error);
       }
     }
     if (roomId) loadMessage();
@@ -175,7 +174,6 @@ const ChatPage = () => {
       } else {
         toast.error("Failed to load messages !!!");
       }
-      console.error(error);
     } finally {
       setIsLoadingMore(false);
     }
@@ -187,7 +185,7 @@ const ChatPage = () => {
       if (!acc[groupKey]) acc[groupKey] = [];
       const normalizedMsg = {
         ...msg,
-        sentAt: new Date(msg.sentAt),
+        sentAt: new Date(msg.sentAt, 'Z'),
       };
       acc[groupKey].push(normalizedMsg);
       return acc;
