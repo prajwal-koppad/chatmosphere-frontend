@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { MdAttachment, MdExitToApp, MdSend } from "react-icons/md";
 import backgroundImage from "../assets/background.png";
 import av2 from "../assets/av-2.png";
@@ -181,13 +181,18 @@ const ChatPage = () => {
     }
   };
 
-  const groupedMessages = messages.reduce((acc, msg) => {
-    const groupKey = formatMessageDate(msg.sentAt);
-    if (!acc[groupKey]) acc[groupKey] = [];
-    msg.sentAt = new Date(msg.sentAt + "Z");
-    acc[groupKey].push(msg);
-    return acc;
-  }, {});
+  const groupedMessages = useMemo(() => {
+    return messages.reduce((acc, msg) => {
+      const groupKey = formatMessageDate(msg.sentAt);
+      if (!acc[groupKey]) acc[groupKey] = [];
+      const normalizedMsg = {
+        ...msg,
+        sentAt: new Date(msg.sentAt),
+      };
+      acc[groupKey].push(normalizedMsg);
+      return acc;
+    }, {});
+  }, [messages]);  
 
   function handleLogOut() {
     setConnected(false);
