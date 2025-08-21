@@ -185,7 +185,7 @@ const ChatPage = () => {
       if (!acc[groupKey]) acc[groupKey] = [];
       const normalizedMsg = {
         ...msg,
-        sentAt: new Date(msg.sentAt, 'Z'),
+        sentAt: new Date(msg.sentAt)
       };
       acc[groupKey].push(normalizedMsg);
       return acc;
