@@ -48,7 +48,6 @@ const JoinCreateChat = () => {
       } else {
         toast.error("Failed to join room !!!");
       }
-      console.error(error);
     } 
   }
 
@@ -58,7 +57,6 @@ const JoinCreateChat = () => {
     try {
       const response = await createRoomApi(userDetail);
       toast.success("Room create successfully !!!");
-      console.log(response)
       setCurrentUser(userDetail.userName);
       setRoomId(response?.roomId);
       setConnected(true);
@@ -69,7 +67,6 @@ const JoinCreateChat = () => {
       } else {
         toast.error("Failed to create room !!!");
       }
-      console.error(error);
     }
   }
 
