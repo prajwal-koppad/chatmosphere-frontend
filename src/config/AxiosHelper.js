@@ -1,7 +1,6 @@
 import axios from "axios";
 
-export const baseUrl = localStorage.getItem("chatmosphere_api_url") || "http://localhost:8080";
-// export const baseUrl = "http://143.244.132.106:8080";
+export const baseUrl = import.meta.env.VITE_API_BASE_URL;
 
 export const loginUrl = "api/v1/auth/login";
 export const signupUrl = "api/v1/auth/signup";
