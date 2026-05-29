@@ -1,0 +1,9 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Essential for React Router (SPA) to prevent 404 on page refreshes
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
