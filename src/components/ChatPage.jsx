@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
-import { MdExitToApp, MdSend, MdContentCopy, MdOutlineChatBubble, MdMenu, MdClose, MdPerson, MdLogout } from "react-icons/md";
+import { MdExitToApp, MdSend, MdContentCopy, MdOutlineChatBubble, MdMenu, MdClose, MdPerson, MdLogout, MdPersonAdd, MdPersonRemove, MdArrowBack } from "react-icons/md";
+import InviteContactsModal from "./ui/InviteContactsModal";
+import ConfirmDialog from "./ui/ConfirmDialog";
 import useChatContext from "../context/ChatContext";
 import { useNavigate } from "react-router";
 import SockJS from "sockjs-client";
@@ -11,10 +13,22 @@ import {
 } from "../config/AxiosHelper";
 import { Stomp } from "@stomp/stompjs";
 import { toast } from "react-hot-toast";
-import { getMessages, joinRoom } from "../services/RoomService";
+import { getMessages, joinRoom, removeParticipantFromRoom } from "../services/RoomService";
 import { formatMessageDate, parseUTCDate } from "../utilities/Utility";
 
 const ChatPage = () => {
+  const {
+    roomId,
+    currentUser,
+    displayName,
+    avatarUrl,
+    token,
+    connected,
+    setRoomId,
+    setConnected,
+    logout
+  } = useChatContext();
+
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [stompClient, setStompClient] = useState(null);
@@ -27,23 +41,24 @@ const ChatPage = () => {
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => window.innerWidth >= 768);
   const [isTypingLocal, setIsTypingLocal] = useState(false);
+  const [room, setRoom] = useState(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [confirmState, setConfirmState] = useState(null);
+
+  const offlineUsers = useMemo(() => {
+    if (!room || !room.participants) return [];
+    const participantsList = Array.from(room.participants);
+    return participantsList.filter((user) => !onlineUsers.includes(user));
+  }, [room, onlineUsers]);
+
+  const isCreator = useMemo(() => {
+    return room && room.createdBy === currentUser;
+  }, [room, currentUser]);
 
   const inputRef = useRef(null);
   const chatBoxRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const navigate = useNavigate();
-
-  const {
-    roomId,
-    currentUser,
-    displayName,
-    avatarUrl,
-    token,
-    connected,
-    setRoomId,
-    setConnected,
-    logout
-  } = useChatContext();
 
   // Redirect to login if not connected or authenticated
   useEffect(() => {
@@ -66,16 +81,18 @@ const ChatPage = () => {
   }, []);
 
   // Load room name and metadata
-  useEffect(() => {
-    async function fetchRoomDetails() {
-      try {
-        const room = await joinRoom(roomId);
-        setRoomName(room.roomName || room.roomId);
-      } catch (err) {
-        console.error("Failed to load room details", err);
-        setRoomName(roomId);
-      }
+  const fetchRoomDetails = async () => {
+    try {
+      const roomData = await joinRoom(roomId);
+      setRoom(roomData);
+      setRoomName(roomData.roomName || roomData.roomId);
+    } catch (err) {
+      console.error("Failed to load room details", err);
+      setRoomName(roomId);
     }
+  };
+
+  useEffect(() => {
     if (roomId && token) {
       fetchRoomDetails();
     }
@@ -127,6 +144,18 @@ const ChatPage = () => {
         // Subscribe to standard messages
         client.subscribe(receiveMessagePath(roomId), (message) => {
           const newMessage = JSON.parse(message?.body);
+          
+          // Active kick-out detection
+          if (
+            newMessage.senderId === "system" &&
+            newMessage.content &&
+            newMessage.content.endsWith(" removed " + currentUser + " from the space")
+          ) {
+            toast.error("You have been removed from this room.");
+            handleLogOut();
+            return;
+          }
+
           setMessages((prev) => [...prev, newMessage]);
           setScrollToBottom(true);
         });
@@ -368,11 +397,65 @@ const ChatPage = () => {
     sendTypingStatus(false);
     setConnected(false);
     setRoomId(null);
-    navigate("/");
+    navigate("/active-chats");
     if (stompClient) {
       stompClient.deactivate();
     }
   }
+
+  // Back to Room List (Dashboard)
+  const handleBackToDashboard = () => {
+    sendTypingStatus(false);
+    setRoomId(null);
+    navigate("/active-chats");
+    if (stompClient) {
+      stompClient.deactivate();
+    }
+  };
+
+  // Leave Space Permanently
+  const handleLeaveSpacePermanently = () => {
+    if (room && room.group) {
+      setConfirmState({
+        title: "Leave Space",
+        message: "Are you sure you want to permanently leave this space?",
+        confirmText: "Leave Space",
+        variant: "danger",
+        onConfirm: async () => {
+          setConfirmState(null);
+          try {
+            await removeParticipantFromRoom(roomId, currentUser);
+            toast.success("You left the space.");
+          } catch (err) {
+            console.error("Failed to leave space on backend", err);
+          }
+          handleLogOut();
+        }
+      });
+    } else {
+      handleLogOut();
+    }
+  };
+
+  // Remove Participant
+  const handleRemoveParticipant = (username) => {
+    setConfirmState({
+      title: "Remove Participant",
+      message: `Are you sure you want to remove @${username} from the space?`,
+      confirmText: "Remove User",
+      variant: "danger",
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          await removeParticipantFromRoom(roomId, username);
+          toast.success(`Removed @${username} from the space.`);
+          fetchRoomDetails();
+        } catch (err) {
+          toast.error(err?.response?.data?.message || `Failed to remove @${username}`);
+        }
+      }
+    });
+  };
 
   // Choose / Generate dynamic gradient avatar for any user
   const getAvatarGradient = (userStr) => {
@@ -400,6 +483,7 @@ const ChatPage = () => {
   };
 
   return (
+    <>
     <div className="cosmic-bg flex h-screen overflow-hidden">
       <div className="glow-spot-1"></div>
       <div className="glow-spot-2"></div>
@@ -440,30 +524,63 @@ const ChatPage = () => {
         <div className="p-6 border-b border-white/5 space-y-4">
           <div>
             <span className="text-[10px] uppercase tracking-wider font-semibold text-gray-400 block mb-1">
-              Active Room
+              {room && !room.group ? "Direct Message" : "Active Room"}
             </span>
             <h2 className="text-xl font-bold text-white truncate" title={roomName}>
               {roomName || roomId}
             </h2>
           </div>
 
-          <div className="bg-slate-950/40 p-3.5 rounded-xl border border-white/5 flex items-center justify-between">
-            <div className="overflow-hidden mr-2">
-              <span className="text-[9px] uppercase tracking-wider text-gray-500 font-semibold block">
-                Room Access Code
-              </span>
-              <span className="text-xs font-mono font-bold text-indigo-300 block select-all truncate">
-                {roomId}
-              </span>
+          {room && !room.group ? (
+            <div className="bg-slate-950/40 p-3.5 rounded-xl border border-white/5 space-y-2">
+              <div>
+                <span className="text-[9px] uppercase tracking-wider text-gray-500 font-semibold block">
+                  Recipient Username
+                </span>
+                <span className="text-xs font-bold text-indigo-300 block select-all">
+                  @{room.recipient?.username}
+                </span>
+              </div>
+              {room.recipient?.email && (
+                <div>
+                  <span className="text-[9px] uppercase tracking-wider text-gray-500 font-semibold block">
+                    Email Address
+                  </span>
+                  <span className="text-xs font-bold text-gray-300 block select-all truncate" title={room.recipient.email}>
+                    {room.recipient.email}
+                  </span>
+                </div>
+              )}
+              {room.recipient?.mobileNumber && (
+                <div>
+                  <span className="text-[9px] uppercase tracking-wider text-gray-500 font-semibold block">
+                    Mobile Number
+                  </span>
+                  <span className="text-xs font-bold text-gray-300 block select-all">
+                    {room.recipient.mobileNumber}
+                  </span>
+                </div>
+              )}
             </div>
-            <button
-              onClick={copyRoomId}
-              title="Copy Access Code"
-              className="p-2 bg-white/5 hover:bg-indigo-500 hover:text-white rounded-lg text-gray-300 transition-all active:scale-95"
-            >
-              <MdContentCopy size={16} />
-            </button>
-          </div>
+          ) : (
+            <div className="bg-slate-950/40 p-3.5 rounded-xl border border-white/5 flex items-center justify-between">
+              <div className="overflow-hidden mr-2">
+                <span className="text-[9px] uppercase tracking-wider text-gray-500 font-semibold block">
+                  Room Access Code
+                </span>
+                <span className="text-xs font-mono font-bold text-indigo-300 block select-all truncate">
+                  {roomId}
+                </span>
+              </div>
+              <button
+                onClick={copyRoomId}
+                title="Copy Access Code"
+                className="p-2 bg-white/5 hover:bg-indigo-500 hover:text-white rounded-lg text-gray-300 transition-all active:scale-95"
+              >
+                <MdContentCopy size={16} />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Online Users List */}
@@ -473,19 +590,69 @@ const ChatPage = () => {
           </span>
           <div className="space-y-2.5">
             {onlineUsers.map((user) => (
-              <div key={user} className="flex items-center gap-2.5 animate-[slideInLeft_0.2s_ease-out]">
+              <div key={user} className="flex items-center gap-2.5 animate-[slideInLeft_0.2s_ease-out] w-full group/item">
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-sm flex-shrink-0 ${getAvatarGradient(user)}`}>
                   {user.substring(0, 2).toUpperCase()}
                 </div>
-                <span className="text-xs font-semibold text-gray-200 truncate" title={user}>@{user}</span>
+                <span className="text-xs font-semibold text-gray-200 truncate max-w-[120px]" title={user}>@{user}</span>
                 {user === currentUser && (
                   <span className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-500/35 font-bold scale-90">
                     You
                   </span>
                 )}
+                {room?.group && isCreator && user !== currentUser && (
+                  <button
+                    onClick={() => handleRemoveParticipant(user)}
+                    title={`Remove ${user}`}
+                    className="ml-auto p-1 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-all active:scale-95 duration-150"
+                  >
+                    <MdPersonRemove size={14} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
+
+          {/* Offline Users List */}
+          {offlineUsers.length > 0 && (
+            <div className="pt-4 border-t border-white/5 space-y-2">
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-gray-400 block mb-2">
+                Offline Members ({offlineUsers.length})
+              </span>
+              <div className="space-y-2.5 opacity-65 hover:opacity-95 transition-opacity duration-200">
+                {offlineUsers.map((user) => (
+                  <div key={user} className="flex items-center gap-2.5 animate-[fadeIn_0.2s_ease-out] w-full group/item">
+                    <div className="w-7 h-7 rounded-full bg-slate-800/40 border border-white/5 flex items-center justify-center text-[10px] font-bold text-gray-400 shadow-sm flex-shrink-0">
+                      {user.substring(0, 2).toUpperCase()}
+                    </div>
+                    <span className="text-xs font-semibold text-gray-400 truncate max-w-[120px]" title={user}>
+                      @{user}
+                    </span>
+                    {room?.group && isCreator && user !== currentUser && (
+                      <button
+                        onClick={() => handleRemoveParticipant(user)}
+                        title={`Remove ${user}`}
+                        className="ml-auto p-1 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-all active:scale-95 duration-150"
+                      >
+                        <MdPersonRemove size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Invite Members button — only for group rooms */}
+          {room && room.group && (
+            <button
+              onClick={() => setShowInviteModal(true)}
+              className="mt-4 w-full flex items-center justify-center gap-2 px-3.5 py-2.5 bg-indigo-600/15 hover:bg-indigo-600/30 text-indigo-300 hover:text-white text-xs font-bold rounded-xl border border-indigo-500/20 hover:border-indigo-500/40 transition-all duration-200 active:scale-95"
+            >
+              <MdPersonAdd size={15} />
+              Invite Members
+            </button>
+          )}
         </div>
 
         {/* User Card */}
@@ -516,6 +683,13 @@ const ChatPage = () => {
         <header className="h-16 border-b border-white/10 flex items-center justify-between px-4 sm:px-6 bg-slate-950/40 backdrop-blur-md z-20">
           <div className="flex items-center gap-3">
             <button
+              onClick={handleBackToDashboard}
+              title="Back to Room List"
+              className="text-gray-300 hover:text-white p-2 rounded-lg bg-white/5 transition-all active:scale-95 flex items-center justify-center border border-white/5 hover:border-white/10"
+            >
+              <MdArrowBack size={18} />
+            </button>
+            <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               className="text-gray-300 hover:text-white p-2 rounded-lg bg-white/5 md:hidden transition-colors"
             >
@@ -535,14 +709,16 @@ const ChatPage = () => {
             </div>
           </div>
 
-          <button
-            onClick={handleLogOut}
-            title="Leave Atmosphere"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-bold rounded-lg border border-rose-500/20 hover:border-transparent transition-all duration-300"
-          >
-            <MdExitToApp size={16} />
-            <span>Leave Space</span>
-          </button>
+          {room && room.group && (
+            <button
+              onClick={handleLeaveSpacePermanently}
+              title="Leave Atmosphere"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-bold rounded-lg border border-rose-500/20 hover:border-transparent transition-all duration-300"
+            >
+              <MdExitToApp size={16} />
+              <span>Leave Space</span>
+            </button>
+          )}
         </header>
 
         {/* Message Logs */}
@@ -585,7 +761,7 @@ const ChatPage = () => {
 
               {/* Messages */}
               {group.map((message, index) => {
-                if (message.isSystem) {
+                if (message.isSystem || message.senderId?.toLowerCase() === "system") {
                   return (
                     <div
                       key={message.id || index}
@@ -688,7 +864,25 @@ const ChatPage = () => {
           </div>
         </div>
       </main>
-    </div>
+     </div>
+      {showInviteModal && (
+        <InviteContactsModal
+          roomId={roomId}
+          currentParticipants={room?.participants ? Array.from(room.participants) : []}
+          onClose={() => setShowInviteModal(false)}
+          onInviteSuccess={fetchRoomDetails}
+        />
+      )}
+      <ConfirmDialog
+        isOpen={!!confirmState}
+        title={confirmState?.title || ""}
+        message={confirmState?.message || ""}
+        confirmText={confirmState?.confirmText}
+        variant={confirmState?.variant}
+        onConfirm={confirmState?.onConfirm || (() => {})}
+        onCancel={() => setConfirmState(null)}
+      />
+    </>
   );
 };
 
